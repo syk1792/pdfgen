@@ -2,3 +2,5 @@ Flask==2.3.3
 requests==2.31.0
 waitress==2.1.2
 Werkzeug==2.3.7
+beautifulsoup4==4.12.3
+fpdf2==2.7.9
