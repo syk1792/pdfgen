@@ -2,9 +2,20 @@ from flask import Flask, request, send_file, render_template_string
 import requests
 from bs4 import BeautifulSoup
 from fpdf import FPDF
-import io, os, re
+import io, os
 
 app = Flask(__name__)
+
+FONT_PATH = 'NanumGothic.ttf'
+FONT_URL = 'https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Regular.ttf'
+
+def ensure_font():
+    if not os.path.exists(FONT_PATH):
+        print("한글 폰트 다운로드 중...")
+        r = requests.get(FONT_URL, timeout=30)
+        with open(FONT_PATH, 'wb') as f:
+            f.write(r.content)
+        print("폰트 다운로드 완료")
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -83,17 +94,15 @@ function showMsg(type, text) {
 """
 
 def fetch_naver_blog(url):
-    # 모바일 URL로 변환 (크롤링 용이)
     mobile_url = url.replace('blog.naver.com', 'm.blog.naver.com')
     headers = {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15',
         'Accept-Language': 'ko-KR,ko;q=0.9'
     }
     res = requests.get(mobile_url, headers=headers, timeout=15)
     res.encoding = 'utf-8'
     soup = BeautifulSoup(res.text, 'html.parser')
 
-    # 제목 추출
     title = ''
     for sel in ['.se-title-text', '.tit_h3', 'h3.tit_view', '.pcol1', 'title']:
         el = soup.select_one(sel)
@@ -101,57 +110,54 @@ def fetch_naver_blog(url):
             title = el.get_text(strip=True)
             break
 
-    # 본문 추출
     content = ''
     for sel in ['.se-main-container', '.post-view', '#postViewArea', '.se_component_wrap']:
         el = soup.select_one(sel)
         if el:
             content = el.get_text(separator='\n', strip=True)
             break
-
     if not content:
         content = soup.get_text(separator='\n', strip=True)
 
-    # 불필요한 빈 줄 정리
     lines = [l.strip() for l in content.splitlines() if l.strip()]
     content = '\n'.join(lines)
-
     return title, content
 
 def create_pdf(title, content, source_url):
+    ensure_font()
+
     pdf = FPDF()
     pdf.add_page()
+    pdf.add_font('Nanum', '', FONT_PATH)
 
-    # 한글 폰트 (기본 내장 폰트로 ASCII만 처리, 한글은 latin-1 안전처리)
-    pdf.set_font('Helvetica', 'B', 16)
+    # 헤더
     pdf.set_fill_color(26, 22, 18)
-    pdf.set_text_color(255, 255, 255)
-    pdf.rect(0, 0, 210, 32, 'F')
-    pdf.set_xy(10, 10)
-    safe_title = title.encode('latin-1', 'replace').decode('latin-1')
-    pdf.cell(0, 12, safe_title[:60] or 'Naver Blog Post', ln=True)
+    pdf.rect(0, 0, 210, 36, 'F')
+    pdf.set_font('Nanum', size=16)
+    pdf.set_text_color(240, 236, 228)
+    pdf.set_xy(10, 8)
+    pdf.cell(0, 10, title[:40] if title else '네이버 블로그', ln=True)
 
-    pdf.set_text_color(150, 140, 120)
-    pdf.set_font('Helvetica', '', 8)
-    pdf.set_xy(10, 22)
-    pdf.cell(0, 6, source_url[:80], ln=True)
+    pdf.set_font('Nanum', size=8)
+    pdf.set_text_color(120, 110, 96)
+    pdf.set_xy(10, 24)
+    pdf.cell(0, 6, source_url[:90], ln=True)
 
+    # 본문
     pdf.set_text_color(40, 35, 30)
-    pdf.set_font('Helvetica', '', 11)
-    pdf.set_xy(10, 40)
+    pdf.set_font('Nanum', size=11)
+    pdf.set_xy(12, 44)
 
     for line in content.split('\n'):
-        safe_line = line.encode('latin-1', 'replace').decode('latin-1')
-        if not safe_line.strip():
+        if not line.strip():
             pdf.ln(4)
             continue
-        pdf.set_x(10)
-        pdf.multi_cell(190, 6, safe_line)
-
-        if pdf.get_y() > 270:
+        pdf.set_x(12)
+        pdf.multi_cell(186, 6.5, line)
+        if pdf.get_y() > 272:
             pdf.add_page()
-            pdf.set_font('Helvetica', '', 11)
-            pdf.set_xy(10, 15)
+            pdf.set_font('Nanum', size=11)
+            pdf.set_xy(12, 15)
 
     buf = io.BytesIO()
     pdf.output(buf)
@@ -177,7 +183,7 @@ def convert():
         return send_file(pdf_buf, mimetype='application/pdf',
                          as_attachment=True, download_name='naver_blog.pdf')
     except Exception as e:
-        return f'오류가 발생했습니다: {str(e)}', 500
+        return f'오류: {str(e)}', 500
 
 if __name__ == '__main__':
     from waitress import serve
