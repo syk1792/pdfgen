@@ -1,3 +1,58 @@
 Flask==2.0.1
-pdfkit==0.6.1
+weasyprint==54.0
 gunicorn==20.1.0
+```eof
+
+### 2. `app.py` 수정
+`pdfkit`은 시스템 설치가 필수라 에러가 나지만, `weasyprint`는 파이썬 내부에서 바로 실행되어 Render 환경에 적합합니다. `app.py`를 아래 코드로 교체하세요.
+
+```python:app.py
+from flask import Flask, request, send_file, render_template_string
+from weasyprint import HTML
+import uuid
+import os
+
+app = Flask(__name__)
+
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="ko">
+<head><meta charset="UTF-8"><title>AI 데이터 변환기</title></head>
+<body>
+    <h1>AI 학습 데이터 변환기</h1>
+    <form action="/convert" method="post">
+        <input type="text" name="url" placeholder="블로그 주소 입력">
+        <button type="submit">변환하기</button>
+    </form>
+</body>
+</html>
+"""
+
+@app.route('/')
+def index():
+    return render_template_string(HTML_TEMPLATE)
+
+@app.route('/convert', methods=['POST'])
+def convert():
+    url = request.form.get('url')
+    output_filename = f"{uuid.uuid4()}.pdf"
+    
+    try:
+        # WeasyPrint를 사용하여 URL을 바로 PDF로 렌더링
+        HTML(url).write_pdf(output_filename)
+        return send_file(output_filename, as_attachment=True)
+    except Exception as e:
+        return f"변환 실패: {e}"
+
+if __name__ == '__main__':
+    app.run()
+```eof
+
+### 3. `Procfile`과 배포 설정
+1. `Procfile`은 그대로 두셔도 됩니다.
+2. Render의 **Build Command** 설정을 수정해야 합니다. 시스템 설치(apt-get)를 지우고 단순하게 변경하세요.
+   * **수정 전:** `pip install -r requirements.txt && apt-get update && ...`
+   * **수정 후(Build Command):** `pip install -r requirements.txt`
+3. 수정 후 다시 **[Deploy]**를 누르면 이번에는 에러 없이 성공할 겁니다!
+
+시스템 권한이 없는 환경이라 발생하는 문제이니, 이 `weasyprint` 방식이 훨씬 안정적일 거예요. 다시 시도해 보시겠어요?A
