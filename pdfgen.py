@@ -6,20 +6,11 @@ import io, os, tempfile
 
 app = Flask(__name__)
 
-FONT_PATH = 'NanumGothic.ttf'
-FONT_BOLD_PATH = 'NanumGothicBold.ttf'
-FONT_URL = 'https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Regular.ttf'
-FONT_BOLD_URL = 'https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothicBold.ttf'
+FONT_PATH = 'NanumGothic-Regular.ttf'
+FONT_BOLD_PATH = 'NanumGothic-Regular.ttf'
 
 def ensure_font():
-    if not os.path.exists(FONT_PATH):
-        r = requests.get(FONT_URL, timeout=30)
-        with open(FONT_PATH, 'wb') as f:
-            f.write(r.content)
-    if not os.path.exists(FONT_BOLD_PATH):
-        r = requests.get(FONT_BOLD_URL, timeout=30)
-        with open(FONT_BOLD_PATH, 'wb') as f:
-            f.write(r.content)
+    pass
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -37,7 +28,6 @@ HTML_TEMPLATE = """
   label { font-size: 13px; font-weight: 500; color: #3a3530; display: block; margin-bottom: 6px; }
   input[type=text] { width: 100%; padding: 12px 14px; border: 1px solid #e0d8cc; border-radius: 8px; font-size: 14px; color: #1a1612; outline: none; transition: border 0.2s; margin-bottom: 20px; }
   input[type=text]:focus { border-color: #c8a850; }
-
   .mode-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
   .mode-card { border: 2px solid #e0d8cc; border-radius: 10px; padding: 16px 14px; cursor: pointer; transition: all 0.2s; position: relative; }
   .mode-card:hover { border-color: #c8a850; background: #fdf9f0; }
@@ -49,7 +39,6 @@ HTML_TEMPLATE = """
   .mode-badge { display: inline-block; font-size: 10px; padding: 2px 7px; border-radius: 20px; margin-top: 6px; font-weight: 600; }
   .badge-fast { background: #edfaed; color: #2a7a2a; }
   .badge-slow { background: #fff4e0; color: #8a5a00; }
-
   button { width: 100%; padding: 13px; background: #1a1612; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; transition: background 0.2s; }
   button:hover { background: #333; }
   .msg { margin-top: 18px; padding: 14px; border-radius: 8px; font-size: 13px; line-height: 1.6; display: none; }
@@ -62,11 +51,9 @@ HTML_TEMPLATE = """
 <div class="card">
   <h1>📄 웹페이지 PDF 변환기</h1>
   <p class="sub">네이버 블로그, 티스토리, 브런치, 일반 웹페이지 모두 지원합니다.<br>NotebookLM, Gemini AI 학습에 바로 활용하세요.</p>
-
   <form id="form">
     <label>웹페이지 주소</label>
     <input type="text" id="url" placeholder="https://..." />
-
     <label>변환 방식 선택</label>
     <div class="mode-group">
       <div class="mode-card selected" id="card-text" onclick="selectMode('text')">
@@ -84,36 +71,28 @@ HTML_TEMPLATE = """
         <span class="mode-badge badge-slow">🐢 느림 30초~1분</span>
       </div>
     </div>
-
     <button type="submit">PDF로 변환하기</button>
   </form>
-
   <div class="loading" id="loading">
     ⏳ 변환 중입니다...<br>
     <span id="loading-sub">잠시만 기다려 주세요.</span>
   </div>
   <div class="msg" id="msg"></div>
 </div>
-
 <script>
 function selectMode(mode) {
   document.getElementById('card-text').classList.toggle('selected', mode === 'text');
   document.getElementById('card-full').classList.toggle('selected', mode === 'full');
   document.querySelector('input[value="' + mode + '"]').checked = true;
 }
-
 document.getElementById('form').addEventListener('submit', async function(e) {
   e.preventDefault();
   const url = document.getElementById('url').value.trim();
   if (!url) return;
   const mode = document.querySelector('input[name="mode"]:checked').value;
-
   document.getElementById('loading').style.display = 'block';
-  document.getElementById('loading-sub').textContent = mode === 'full'
-    ? '이미지를 다운로드 중입니다. 1분 정도 걸릴 수 있어요.'
-    : '잠시만 기다려 주세요.';
+  document.getElementById('loading-sub').textContent = mode === 'full' ? '이미지를 다운로드 중입니다. 1분 정도 걸릴 수 있어요.' : '잠시만 기다려 주세요.';
   document.getElementById('msg').style.display = 'none';
-
   try {
     const res = await fetch('/convert', {
       method: 'POST',
@@ -136,7 +115,6 @@ document.getElementById('form').addEventListener('submit', async function(e) {
   }
   document.getElementById('loading').style.display = 'none';
 });
-
 function showMsg(type, text) {
   const el = document.getElementById('msg');
   el.className = 'msg ' + type;
@@ -149,10 +127,8 @@ function showMsg(type, text) {
 """
 
 def fetch_page(url):
-    # 네이버 블로그는 모바일로 변환
     if 'blog.naver.com' in url:
         url = url.replace('blog.naver.com', 'm.blog.naver.com')
-
     headers = {
         'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15',
         'Accept-Language': 'ko-KR,ko;q=0.9'
@@ -161,7 +137,6 @@ def fetch_page(url):
     res.encoding = 'utf-8'
     soup = BeautifulSoup(res.text, 'html.parser')
 
-    # 제목 추출
     title = ''
     for sel in ['.se-title-text', 'h1', 'h2', '.tit_h3', '.pcol1', 'title']:
         el = soup.select_one(sel)
@@ -169,19 +144,8 @@ def fetch_page(url):
             title = el.get_text(strip=True)
             break
 
-    # 본문 컨테이너 찾기 (다양한 사이트 대응)
     container = None
-    for sel in [
-        '.se-main-container',   # 네이버 블로그
-        'article',              # 일반 뉴스/블로그
-        '.post-content',        # 티스토리
-        '.entry-content',       # 워드프레스/블로그스팟
-        '.article-body',        # 뉴스
-        'main',                 # 일반 사이트
-        '#content',
-        '.content',
-        '#postViewArea',
-    ]:
+    for sel in ['.se-main-container', 'article', '.post-content', '.entry-content', '.article-body', 'main', '#content', '.content', '#postViewArea']:
         container = soup.select_one(sel)
         if container:
             break
@@ -209,7 +173,6 @@ def fetch_page(url):
             if line.strip() and len(line.strip()) > 1:
                 blocks.append({'type': 'body', 'text': line.strip()})
 
-    # 중복 제거
     seen = set()
     unique = []
     for b in blocks:
@@ -237,13 +200,11 @@ def download_image(url):
 
 def create_pdf(title, blocks, source_url, include_images=False):
     ensure_font()
-
     pdf = FPDF()
     pdf.add_page()
     pdf.add_font('Nanum', '', FONT_PATH)
     pdf.add_font('NanumB', '', FONT_BOLD_PATH)
 
-    # 헤더
     pdf.set_fill_color(26, 22, 18)
     pdf.rect(0, 0, 210, 38, 'F')
     pdf.set_font('NanumB', size=16)
@@ -270,14 +231,12 @@ def create_pdf(title, blocks, source_url, include_images=False):
             pdf.set_text_color(26, 22, 18)
             pdf.multi_cell(186, 8, block['text'])
             pdf.ln(2)
-
         elif block['type'] == 'body':
             pdf.set_x(12)
             pdf.set_font('Nanum', size=10)
             pdf.set_text_color(50, 45, 38)
             pdf.multi_cell(186, 6, block['text'])
             pdf.ln(1)
-
         elif block['type'] == 'image' and include_images:
             img_path = download_image(block['src'])
             if img_path:
