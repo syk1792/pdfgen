@@ -2,12 +2,11 @@ from flask import Flask, request, send_file, render_template_string
 import requests
 from bs4 import BeautifulSoup
 from fpdf import FPDF
-import io, os, tempfile, re
+import io, os, re
 
 app = Flask(__name__)
 
 FONT_PATH = 'NanumGothic-Regular.ttf'
-FONT_BOLD_PATH = 'NanumGothic-Regular.ttf'
 
 def ensure_font():
     pass
@@ -24,80 +23,48 @@ HTML_TEMPLATE = """
   body { font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; background: #f5f2ec; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
   .card { background: #fff; border-radius: 12px; padding: 40px 36px; max-width: 500px; width: 100%; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
   h1 { font-size: 20px; font-weight: 700; color: #1a1612; margin-bottom: 8px; }
-  .sub { font-size: 13px; color: #9a9080; margin-bottom: 28px; line-height: 1.6; }
+  .sub { font-size: 13px; color: #9a9080; margin-bottom: 28px; line-height: 1.7; }
   label { font-size: 13px; font-weight: 500; color: #3a3530; display: block; margin-bottom: 6px; }
-  input[type=text] { width: 100%; padding: 12px 14px; border: 1px solid #e0d8cc; border-radius: 8px; font-size: 14px; color: #1a1612; outline: none; transition: border 0.2s; margin-bottom: 20px; }
+  input[type=text] { width: 100%; padding: 12px 14px; border: 1px solid #e0d8cc; border-radius: 8px; font-size: 14px; color: #1a1612; outline: none; transition: border 0.2s; margin-bottom: 16px; }
   input[type=text]:focus { border-color: #c8a850; }
-  .mode-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
-  .mode-card { border: 2px solid #e0d8cc; border-radius: 10px; padding: 16px 14px; cursor: pointer; transition: all 0.2s; position: relative; }
-  .mode-card:hover { border-color: #c8a850; background: #fdf9f0; }
-  .mode-card.selected { border-color: #1a1612; background: #f7f4ef; }
-  .mode-card input[type=radio] { position: absolute; opacity: 0; }
-  .mode-icon { font-size: 24px; margin-bottom: 8px; }
-  .mode-title { font-size: 13px; font-weight: 700; color: #1a1612; margin-bottom: 4px; }
-  .mode-desc { font-size: 11px; color: #9a9080; line-height: 1.5; }
-  .mode-badge { display: inline-block; font-size: 10px; padding: 2px 7px; border-radius: 20px; margin-top: 6px; font-weight: 600; }
-  .badge-fast { background: #edfaed; color: #2a7a2a; }
-  .badge-slow { background: #fff4e0; color: #8a5a00; }
-  button { width: 100%; padding: 13px; background: #1a1612; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; transition: background 0.2s; }
-  button:hover { background: #333; }
+  button { width: 100%; padding: 14px; background: #1a1612; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; transition: background 0.2s; letter-spacing: 0.03em; }
+  button:hover { background: #3a3530; }
   .msg { margin-top: 18px; padding: 14px; border-radius: 8px; font-size: 13px; line-height: 1.6; display: none; }
   .msg.success { background: #edfaed; color: #2a7a2a; border: 1px solid #b8e8b8; }
   .msg.error { background: #faeaea; color: #8a2020; border: 1px solid #e8b8b8; }
-  .loading { display: none; text-align: center; margin-top: 14px; font-size: 13px; color: #9a9080; line-height: 1.7; }
+  .loading { display: none; text-align: center; margin-top: 16px; font-size: 13px; color: #9a9080; line-height: 1.8; }
+  .loading .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid #e0d8cc; border-top-color: #1a1612; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 8px; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .tag { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 20px; background: #f0ece4; color: #8a7a60; margin-bottom: 20px; letter-spacing: 0.05em; }
 </style>
 </head>
 <body>
 <div class="card">
+  <span class="tag">TEXT · PDF · AI READY</span>
   <h1>📄 웹페이지 PDF 변환기</h1>
-  <p class="sub">네이버 블로그, 티스토리, 브런치, 일반 웹페이지 모두 지원합니다.<br>NotebookLM, Gemini AI 학습에 바로 활용하세요.</p>
+  <p class="sub">네이버 블로그, 티스토리, 브런치, 뉴스 기사 등<br>어떤 웹페이지든 본문만 깔끔하게 추출해 PDF로 저장합니다.<br>NotebookLM, Gemini AI 학습에 바로 활용하세요.</p>
   <form id="form">
     <label>웹페이지 주소</label>
-    <input type="text" id="url" placeholder="https://..." />
-    <label>변환 방식 선택</label>
-    <div class="mode-group">
-      <div class="mode-card selected" id="card-text" onclick="selectMode('text')">
-        <input type="radio" name="mode" value="text" checked />
-        <div class="mode-icon">📝</div>
-        <div class="mode-title">텍스트만</div>
-        <div class="mode-desc">본문 글자만 추출합니다</div>
-        <span class="mode-badge badge-fast">⚡ 빠름 5~10초</span>
-      </div>
-      <div class="mode-card" id="card-full" onclick="selectMode('full')">
-        <input type="radio" name="mode" value="full" />
-        <div class="mode-icon">🖼️</div>
-        <div class="mode-title">텍스트 + 이미지</div>
-        <div class="mode-desc">글자와 사진을 함께 저장합니다</div>
-        <span class="mode-badge badge-slow">🐢 느림 30초~1분</span>
-      </div>
-    </div>
+    <input type="text" id="url" placeholder="https://blog.naver.com/..." />
     <button type="submit">PDF로 변환하기</button>
   </form>
   <div class="loading" id="loading">
-    ⏳ 변환 중입니다...<br>
-    <span id="loading-sub">잠시만 기다려 주세요.</span>
+    <span class="spinner"></span>본문을 추출하고 있습니다. 잠시만 기다려 주세요.
   </div>
   <div class="msg" id="msg"></div>
 </div>
 <script>
-function selectMode(mode) {
-  document.getElementById('card-text').classList.toggle('selected', mode === 'text');
-  document.getElementById('card-full').classList.toggle('selected', mode === 'full');
-  document.querySelector('input[value="' + mode + '"]').checked = true;
-}
 document.getElementById('form').addEventListener('submit', async function(e) {
   e.preventDefault();
   const url = document.getElementById('url').value.trim();
   if (!url) return;
-  const mode = document.querySelector('input[name="mode"]:checked').value;
   document.getElementById('loading').style.display = 'block';
-  document.getElementById('loading-sub').textContent = mode === 'full' ? '이미지를 다운로드 중입니다. 1분 정도 걸릴 수 있어요.' : '잠시만 기다려 주세요.';
   document.getElementById('msg').style.display = 'none';
   try {
     const res = await fetch('/convert', {
       method: 'POST',
       headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: 'url=' + encodeURIComponent(url) + '&mode=' + mode
+      body: 'url=' + encodeURIComponent(url)
     });
     if (res.ok && res.headers.get('content-type').includes('pdf')) {
       const blob = await res.blob();
@@ -126,13 +93,24 @@ function showMsg(type, text) {
 </html>
 """
 
-def upgrade_naver_image_url(url):
-    """네이버 썸네일 URL을 원본 고화질 URL로 변환"""
-    # 썸네일 파라미터 제거 (type=m, w80, h60 등)
-    url = re.sub(r'\?.*$', '', url)
-    # mblogthumb → postfiles (원본 서버)
-    url = url.replace('mblogthumb-phinf.pstatic.net', 'postfiles.pstatic.net')
-    return url
+# 광고/불필요 텍스트 필터링 패턴
+NOISE_PATTERNS = [
+    r'^공감\s*\d*$', r'^댓글\s*\d*$', r'^구독\s*\d*$',
+    r'^이웃추가$', r'^카카오스토리$', r'^트위터$', r'^페이스북$',
+    r'^URL 복사$', r'^통계$', r'^신고$', r'^목록보기$',
+    r'^\d+$', r'^[ㄱ-ㅎ가-힣]{1,2}$',
+    r'^\s*$', r'^Copyright', r'^All rights reserved',
+    r'로그인', r'회원가입', r'광고', r'본문 바로가기',
+]
+
+def is_noise(text):
+    text = text.strip()
+    if len(text) < 2:
+        return True
+    for pattern in NOISE_PATTERNS:
+        if re.search(pattern, text, re.IGNORECASE):
+            return True
+    return False
 
 def fetch_page(url):
     if 'blog.naver.com' in url:
@@ -146,16 +124,35 @@ def fetch_page(url):
     res.encoding = 'utf-8'
     soup = BeautifulSoup(res.text, 'html.parser')
 
+    # 불필요한 태그 제거
+    for tag in soup.find_all(['script', 'style', 'nav', 'footer', 'header',
+                               'aside', 'iframe', 'noscript', 'ads']):
+        tag.decompose()
+
+    # 제목 추출
     title = ''
-    for sel in ['.se-title-text', 'h1', 'h2', '.tit_h3', '.pcol1', 'title']:
+    for sel in ['.se-title-text', 'h1', '.tit_h3', '.pcol1', 'title']:
         el = soup.select_one(sel)
         if el:
-            title = el.get_text(strip=True)
-            break
+            t = el.get_text(strip=True)
+            if t and len(t) > 2:
+                title = t
+                break
 
+    # 본문 컨테이너
     container = None
-    for sel in ['.se-main-container', 'article', '.post-content', '.entry-content',
-                '.article-body', 'main', '#content', '.content', '#postViewArea']:
+    for sel in [
+        '.se-main-container',
+        'article',
+        '.post-content',
+        '.entry-content',
+        '.article-body',
+        '.tt_article_useless_p_margin',  # 티스토리
+        '#postViewArea',
+        'main',
+        '#content',
+        '.content',
+    ]:
         container = soup.select_one(sel)
         if container:
             break
@@ -165,76 +162,63 @@ def fetch_page(url):
         for el in container.descendants:
             if not hasattr(el, 'name') or not el.name:
                 continue
-            if el.name in ['h1', 'h2', 'h3', 'h4']:
+            if el.name in ['h2', 'h3', 'h4']:
                 text = el.get_text(strip=True)
-                if text:
+                if text and not is_noise(text):
                     blocks.append({'type': 'heading', 'text': text})
             elif el.name == 'p':
                 text = el.get_text(strip=True)
-                if text and len(text) > 1:
+                if text and len(text) > 5 and not is_noise(text):
                     blocks.append({'type': 'body', 'text': text})
-            elif el.name == 'img':
-                src = el.get('src', '') or el.get('data-src', '')
-                if src and src.startswith('http'):
-                    # 네이버 이미지는 원본 URL로 업그레이드
-                    if 'pstatic.net' in src:
-                        src = upgrade_naver_image_url(src)
-                    blocks.append({'type': 'image', 'src': src})
+            elif el.name in ['li']:
+                text = el.get_text(strip=True)
+                if text and len(text) > 2 and not is_noise(text):
+                    blocks.append({'type': 'list', 'text': '• ' + text})
     else:
-        text = soup.get_text(separator='\n', strip=True)
-        for line in text.split('\n'):
-            if line.strip() and len(line.strip()) > 1:
-                blocks.append({'type': 'body', 'text': line.strip()})
+        for line in soup.get_text(separator='\n').split('\n'):
+            line = line.strip()
+            if line and len(line) > 5 and not is_noise(line):
+                blocks.append({'type': 'body', 'text': line})
 
+    # 중복 제거
     seen = set()
     unique = []
     for b in blocks:
-        key = b.get('text', b.get('src', ''))
+        key = b['text']
         if key not in seen:
             seen.add(key)
             unique.append(b)
 
     return title, unique
 
-def download_image(url):
-    try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0',
-            'Referer': 'https://blog.naver.com'
-        }
-        r = requests.get(url, headers=headers, timeout=10)
-        ct = r.headers.get('Content-Type', '')
-        if r.status_code == 200 and 'image' in ct:
-            suffix = '.png' if 'png' in ct else '.jpg'
-            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-            tmp.write(r.content)
-            tmp.close()
-            return tmp.name
-    except:
-        pass
-    return None
-
-def create_pdf(title, blocks, source_url, include_images=False):
+def create_pdf(title, blocks, source_url):
     ensure_font()
     pdf = FPDF()
     pdf.add_page()
     pdf.add_font('Nanum', '', FONT_PATH)
-    pdf.add_font('NanumB', '', FONT_BOLD_PATH)
 
-    # 헤더
+    # 헤더 배경
     pdf.set_fill_color(26, 22, 18)
-    pdf.rect(0, 0, 210, 38, 'F')
-    pdf.set_font('NanumB', size=16)
-    pdf.set_text_color(240, 236, 228)
-    pdf.set_xy(10, 7)
-    pdf.multi_cell(190, 8, title[:50] if title else '웹페이지')
-    pdf.set_font('Nanum', size=8)
-    pdf.set_text_color(120, 110, 96)
-    pdf.set_xy(10, 28)
-    pdf.cell(0, 6, source_url[:90], ln=True)
-    pdf.set_xy(12, 46)
+    pdf.rect(0, 0, 210, 42, 'F')
 
-    tmp_images = []
+    # 제목
+    pdf.set_font('Nanum', size=17)
+    pdf.set_text_color(240, 236, 228)
+    pdf.set_xy(12, 8)
+    pdf.multi_cell(186, 9, title[:60] if title else '웹페이지')
+
+    # URL
+    pdf.set_font('Nanum', size=8)
+    pdf.set_text_color(100, 90, 76)
+    pdf.set_xy(12, 32)
+    pdf.cell(0, 6, source_url[:90], ln=True)
+
+    # 구분선
+    pdf.set_draw_color(200, 168, 80)
+    pdf.set_line_width(0.5)
+    pdf.line(12, 43, 198, 43)
+
+    pdf.set_xy(12, 50)
 
     for block in blocks:
         if pdf.get_y() > 272:
@@ -242,45 +226,41 @@ def create_pdf(title, blocks, source_url, include_images=False):
             pdf.set_xy(12, 15)
 
         if block['type'] == 'heading':
-            pdf.ln(4)
+            pdf.ln(5)
             pdf.set_x(12)
-            pdf.set_font('NanumB', size=14)
+            pdf.set_font('Nanum', size=14)
             pdf.set_text_color(26, 22, 18)
             pdf.multi_cell(186, 8, block['text'])
-            pdf.ln(2)
+            # 소제목 아래 밑줄
+            y = pdf.get_y()
+            pdf.set_draw_color(220, 210, 190)
+            pdf.set_line_width(0.3)
+            pdf.line(12, y, 198, y)
+            pdf.ln(3)
 
         elif block['type'] == 'body':
             pdf.set_x(12)
             pdf.set_font('Nanum', size=10)
             pdf.set_text_color(50, 45, 38)
-            pdf.multi_cell(186, 6, block['text'])
+            pdf.multi_cell(186, 6.5, block['text'])
+            pdf.ln(1.5)
+
+        elif block['type'] == 'list':
+            pdf.set_x(16)
+            pdf.set_font('Nanum', size=10)
+            pdf.set_text_color(60, 55, 46)
+            pdf.multi_cell(182, 6.5, block['text'])
             pdf.ln(1)
 
-        elif block['type'] == 'image' and include_images:
-            img_path = download_image(block['src'])
-            if img_path:
-                tmp_images.append(img_path)
-                try:
-                    if pdf.get_y() > 220:
-                        pdf.add_page()
-                        pdf.set_xy(12, 15)
-                    pdf.ln(3)
-                    # 페이지 너비 최대로 이미지 삽입 (고화질)
-                    pdf.image(img_path, x=12, w=186)
-                    pdf.ln(4)
-                except:
-                    pass
+    # 푸터
+    pdf.set_y(-15)
+    pdf.set_font('Nanum', size=8)
+    pdf.set_text_color(180, 170, 155)
+    pdf.cell(0, 10, 'Generated by pdfgen-prhu.onrender.com', align='C')
 
     buf = io.BytesIO()
     pdf.output(buf)
     buf.seek(0)
-
-    for p in tmp_images:
-        try:
-            os.unlink(p)
-        except:
-            pass
-
     return buf
 
 @app.route('/')
@@ -290,18 +270,15 @@ def index():
 @app.route('/convert', methods=['POST'])
 def convert():
     url = request.form.get('url', '').strip()
-    mode = request.form.get('mode', 'text')
-    include_images = (mode == 'full')
-
     if not url:
         return '주소를 입력해 주세요.', 400
     if not url.startswith('http'):
-        return '올바른 주소를 입력해 주세요. (http:// 또는 https://로 시작)', 400
+        return '올바른 주소를 입력해 주세요. (https://로 시작)', 400
     try:
         title, blocks = fetch_page(url)
         if not blocks:
-            return '페이지 내용을 가져오지 못했습니다. 공개된 페이지인지 확인해 주세요.', 400
-        pdf_buf = create_pdf(title, blocks, url, include_images=include_images)
+            return '본문을 가져오지 못했습니다. 공개된 페이지인지 확인해 주세요.', 400
+        pdf_buf = create_pdf(title, blocks, url)
         return send_file(pdf_buf, mimetype='application/pdf',
                          as_attachment=True, download_name='page.pdf')
     except Exception as e:
