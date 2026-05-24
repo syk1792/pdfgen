@@ -2,7 +2,7 @@ from flask import Flask, request, send_file, render_template_string
 import requests
 from bs4 import BeautifulSoup
 from fpdf import FPDF
-import io, os, tempfile
+import io, os, tempfile, re
 
 app = Flask(__name__)
 
@@ -126,9 +126,18 @@ function showMsg(type, text) {
 </html>
 """
 
+def upgrade_naver_image_url(url):
+    """네이버 썸네일 URL을 원본 고화질 URL로 변환"""
+    # 썸네일 파라미터 제거 (type=m, w80, h60 등)
+    url = re.sub(r'\?.*$', '', url)
+    # mblogthumb → postfiles (원본 서버)
+    url = url.replace('mblogthumb-phinf.pstatic.net', 'postfiles.pstatic.net')
+    return url
+
 def fetch_page(url):
     if 'blog.naver.com' in url:
         url = url.replace('blog.naver.com', 'm.blog.naver.com')
+
     headers = {
         'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15',
         'Accept-Language': 'ko-KR,ko;q=0.9'
@@ -145,7 +154,8 @@ def fetch_page(url):
             break
 
     container = None
-    for sel in ['.se-main-container', 'article', '.post-content', '.entry-content', '.article-body', 'main', '#content', '.content', '#postViewArea']:
+    for sel in ['.se-main-container', 'article', '.post-content', '.entry-content',
+                '.article-body', 'main', '#content', '.content', '#postViewArea']:
         container = soup.select_one(sel)
         if container:
             break
@@ -166,6 +176,9 @@ def fetch_page(url):
             elif el.name == 'img':
                 src = el.get('src', '') or el.get('data-src', '')
                 if src and src.startswith('http'):
+                    # 네이버 이미지는 원본 URL로 업그레이드
+                    if 'pstatic.net' in src:
+                        src = upgrade_naver_image_url(src)
                     blocks.append({'type': 'image', 'src': src})
     else:
         text = soup.get_text(separator='\n', strip=True)
@@ -185,7 +198,10 @@ def fetch_page(url):
 
 def download_image(url):
     try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
+        headers = {
+            'User-Agent': 'Mozilla/5.0',
+            'Referer': 'https://blog.naver.com'
+        }
         r = requests.get(url, headers=headers, timeout=10)
         ct = r.headers.get('Content-Type', '')
         if r.status_code == 200 and 'image' in ct:
@@ -205,6 +221,7 @@ def create_pdf(title, blocks, source_url, include_images=False):
     pdf.add_font('Nanum', '', FONT_PATH)
     pdf.add_font('NanumB', '', FONT_BOLD_PATH)
 
+    # 헤더
     pdf.set_fill_color(26, 22, 18)
     pdf.rect(0, 0, 210, 38, 'F')
     pdf.set_font('NanumB', size=16)
@@ -231,12 +248,14 @@ def create_pdf(title, blocks, source_url, include_images=False):
             pdf.set_text_color(26, 22, 18)
             pdf.multi_cell(186, 8, block['text'])
             pdf.ln(2)
+
         elif block['type'] == 'body':
             pdf.set_x(12)
             pdf.set_font('Nanum', size=10)
             pdf.set_text_color(50, 45, 38)
             pdf.multi_cell(186, 6, block['text'])
             pdf.ln(1)
+
         elif block['type'] == 'image' and include_images:
             img_path = download_image(block['src'])
             if img_path:
@@ -246,7 +265,8 @@ def create_pdf(title, blocks, source_url, include_images=False):
                         pdf.add_page()
                         pdf.set_xy(12, 15)
                     pdf.ln(3)
-                    pdf.image(img_path, x=12, w=170)
+                    # 페이지 너비 최대로 이미지 삽입 (고화질)
+                    pdf.image(img_path, x=12, w=186)
                     pdf.ln(4)
                 except:
                     pass
