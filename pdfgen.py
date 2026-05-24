@@ -26,21 +26,23 @@ HTML_TEMPLATE = """
   .sub { font-size: 13px; color: #9a9080; margin-bottom: 24px; line-height: 1.7; }
   label { font-size: 13px; font-weight: 500; color: #3a3530; display: block; margin-bottom: 6px; }
   .label-sub { font-size: 11px; color: #b0a898; font-weight: 400; margin-left: 6px; }
-  textarea { width: 100%; padding: 12px 14px; border: 1px solid #e0d8cc; border-radius: 8px; font-size: 13px; color: #1a1612; outline: none; transition: border 0.2s; margin-bottom: 16px; resize: vertical; min-height: 110px; line-height: 1.7; font-family: inherit; }
+  textarea { width: 100%; padding: 12px 14px; border: 1px solid #e0d8cc; border-radius: 8px; font-size: 13px; color: #1a1612; outline: none; transition: border 0.2s; margin-bottom: 6px; resize: vertical; min-height: 120px; line-height: 1.8; font-family: inherit; }
   textarea:focus { border-color: #c8a850; }
   textarea::placeholder { color: #c8c0b4; }
-  .count { font-size: 11px; color: #b0a898; margin-top: -12px; margin-bottom: 16px; text-align: right; }
-  button { width: 100%; padding: 14px; background: #1a1612; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; transition: background 0.2s; letter-spacing: 0.03em; }
+  .count { font-size: 11px; color: #b0a898; margin-bottom: 16px; text-align: right; }
+  .count.over { color: #e85a5a; }
+  button { width: 100%; padding: 14px; background: #1a1612; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; transition: background 0.2s; }
   button:hover { background: #3a3530; }
+  button:disabled { background: #9a9080; cursor: not-allowed; }
   .msg { margin-top: 18px; padding: 14px; border-radius: 8px; font-size: 13px; line-height: 1.6; display: none; }
   .msg.success { background: #edfaed; color: #2a7a2a; border: 1px solid #b8e8b8; }
   .msg.error { background: #faeaea; color: #8a2020; border: 1px solid #e8b8b8; }
-  .loading { display: none; text-align: center; margin-top: 16px; font-size: 13px; color: #9a9080; line-height: 1.8; }
+  .loading { display: none; text-align: center; margin-top: 16px; font-size: 13px; color: #9a9080; line-height: 1.9; }
   .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #e0d8cc; border-top-color: #1a1612; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 8px; vertical-align: middle; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .tips { background: #f9f7f2; border-radius: 8px; padding: 14px 16px; margin-bottom: 20px; }
   .tips-title { font-size: 11px; font-weight: 700; color: #8a7a60; margin-bottom: 8px; letter-spacing: 0.05em; }
-  .tips li { font-size: 12px; color: #9a8a70; line-height: 1.7; list-style: none; padding-left: 12px; position: relative; }
+  .tips li { font-size: 12px; color: #9a8a70; line-height: 1.8; list-style: none; padding-left: 12px; position: relative; }
   .tips li::before { content: '·'; position: absolute; left: 0; }
 </style>
 </head>
@@ -59,63 +61,101 @@ HTML_TEMPLATE = """
     </ul>
   </div>
 
-  <form id="form">
-    <label>웹페이지 주소 <span class="label-sub">한 줄에 하나씩</span></label>
-    <textarea id="urls" placeholder="https://blog.naver.com/...&#10;https://blog.naver.com/...&#10;https://tistory.com/..."></textarea>
-    <div class="count" id="count">0 / 5개</div>
-    <button type="submit">PDF로 변환하기</button>
-  </form>
+  <label>웹페이지 주소 <span class="label-sub">한 줄에 하나씩 (최대 5개)</span></label>
+  <textarea id="urls" placeholder="https://blog.naver.com/...&#10;https://blog.naver.com/...&#10;https://tistory.com/..."></textarea>
+  <div class="count" id="count">0 / 5개 입력됨</div>
+  <button id="btn" onclick="doConvert()">PDF로 변환하기</button>
 
   <div class="loading" id="loading">
-    <span class="spinner"></span><span id="loading-text">본문을 추출하고 있습니다...</span>
+    <div><span class="spinner"></span>변환 중입니다...</div>
+    <div style="margin-top:6px;font-size:12px;">처음 실행 시 서버 준비에 최대 1분이 걸릴 수 있어요.</div>
   </div>
   <div class="msg" id="msg"></div>
 </div>
+
 <script>
-const textarea = document.getElementById('urls');
-const countEl = document.getElementById('count');
+var urlTextarea = document.getElementById('urls');
+var countEl = document.getElementById('count');
+var btn = document.getElementById('btn');
 
-textarea.addEventListener('input', function() {
-  const lines = this.value.split('\n').filter(l => l.trim().startsWith('http'));
-  countEl.textContent = lines.length + ' / 5개';
-  countEl.style.color = lines.length > 5 ? '#e85a5a' : '#b0a898';
-});
+urlTextarea.addEventListener('input', updateCount);
+urlTextarea.addEventListener('change', updateCount);
+urlTextarea.addEventListener('keyup', updateCount);
 
-document.getElementById('form').addEventListener('submit', async function(e) {
-  e.preventDefault();
-  const raw = textarea.value.trim();
-  const urls = raw.split('\n').map(l => l.trim()).filter(l => l.startsWith('http'));
-  if (urls.length === 0) { showMsg('error', '❌ 주소를 한 줄에 하나씩 입력해 주세요.'); return; }
-  if (urls.length > 5) { showMsg('error', '❌ 최대 5개까지 입력 가능합니다.'); return; }
+function updateCount() {
+  var lines = urlTextarea.value.split('\\n').filter(function(l) {
+    return l.trim().length > 0;
+  });
+  var n = lines.length;
+  countEl.textContent = n + ' / 5개 입력됨';
+  if (n > 5) {
+    countEl.className = 'count over';
+  } else {
+    countEl.className = 'count';
+  }
+}
 
+function doConvert() {
+  var raw = urlTextarea.value.trim();
+  var urls = raw.split('\\n').map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0; });
+
+  if (urls.length === 0) {
+    showMsg('error', '❌ 주소를 한 줄에 하나씩 입력해 주세요.');
+    return;
+  }
+  if (urls.length > 5) {
+    showMsg('error', '❌ 최대 5개까지 입력 가능합니다.');
+    return;
+  }
+
+  btn.disabled = true;
   document.getElementById('loading').style.display = 'block';
   document.getElementById('msg').style.display = 'none';
 
-  try {
-    const res = await fetch('/convert', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: 'urls=' + encodeURIComponent(urls.join('\n'))
-    });
-    if (res.ok && res.headers.get('content-type').includes('pdf')) {
-      const blob = await res.blob();
-      const a = document.createElement('a');
+  var xhr = new XMLHttpRequest();
+  xhr.open('POST', '/convert', true);
+  xhr.responseType = 'blob';
+  xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+  xhr.timeout = 120000; // 2분
+
+  xhr.onload = function() {
+    btn.disabled = false;
+    document.getElementById('loading').style.display = 'none';
+    if (xhr.status === 200) {
+      var blob = xhr.response;
+      var a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = 'pages.pdf';
+      document.body.appendChild(a);
       a.click();
+      document.body.removeChild(a);
       showMsg('success', '✅ PDF 다운로드가 시작됩니다!');
     } else {
-      const text = await res.text();
-      showMsg('error', '❌ ' + text);
+      var reader = new FileReader();
+      reader.onload = function() {
+        showMsg('error', '❌ ' + reader.result);
+      };
+      reader.readAsText(xhr.response);
     }
-  } catch(err) {
-    showMsg('error', '❌ 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
-  }
-  document.getElementById('loading').style.display = 'none';
-});
+  };
+
+  xhr.onerror = function() {
+    btn.disabled = false;
+    document.getElementById('loading').style.display = 'none';
+    showMsg('error', '❌ 네트워크 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
+  };
+
+  xhr.ontimeout = function() {
+    btn.disabled = false;
+    document.getElementById('loading').style.display = 'none';
+    showMsg('error', '❌ 시간이 초과됐습니다. 잠시 후 다시 시도해 주세요.');
+  };
+
+  xhr.send('urls=' + encodeURIComponent(urls.join('\\n')));
+}
 
 function showMsg(type, text) {
-  const el = document.getElementById('msg');
+  var el = document.getElementById('msg');
   el.className = 'msg ' + type;
   el.textContent = text;
   el.style.display = 'block';
@@ -150,7 +190,7 @@ def fetch_page(url):
         'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15',
         'Accept-Language': 'ko-KR,ko;q=0.9'
     }
-    res = requests.get(url, headers=headers, timeout=15)
+    res = requests.get(url, headers=headers, timeout=20)
     res.encoding = 'utf-8'
     soup = BeautifulSoup(res.text, 'html.parser')
 
@@ -206,28 +246,30 @@ def fetch_page(url):
 
     return title, unique
 
-def add_article_to_pdf(pdf, title, blocks, source_url, is_first=True):
-    if not is_first:
-        pdf.add_page()
+def add_article_to_pdf(pdf, title, blocks, source_url):
+    pdf.add_page()
 
-    # 글 제목 헤더
+    # 헤더 배경
     pdf.set_fill_color(26, 22, 18)
-    pdf.rect(0, pdf.get_y() if not is_first else 0, 210, 42, 'F')
+    pdf.rect(0, 0, 210, 42, 'F')
+
+    # 글 제목
     pdf.set_font('Nanum', size=16)
     pdf.set_text_color(240, 236, 228)
-    y_start = pdf.get_y() if not is_first else 0
-    pdf.set_xy(12, y_start + 8)
+    pdf.set_xy(12, 8)
     pdf.multi_cell(186, 9, title[:55] if title else '웹페이지')
+
+    # 출처 URL
     pdf.set_font('Nanum', size=8)
     pdf.set_text_color(100, 90, 76)
-    pdf.set_xy(12, y_start + 30)
+    pdf.set_xy(12, 30)
     pdf.cell(0, 6, source_url[:90], ln=True)
 
     # 황금 구분선
     pdf.set_draw_color(200, 168, 80)
     pdf.set_line_width(0.5)
-    pdf.line(12, y_start + 42, 198, y_start + 42)
-    pdf.set_xy(12, y_start + 50)
+    pdf.line(12, 42, 198, 42)
+    pdf.set_xy(12, 50)
 
     for block in blocks:
         if pdf.get_y() > 272:
@@ -235,7 +277,7 @@ def add_article_to_pdf(pdf, title, blocks, source_url, is_first=True):
             pdf.set_xy(12, 15)
 
         if block['type'] == 'heading':
-            pdf.ln(6)              # 소제목 위 여백
+            pdf.ln(6)
             pdf.set_x(12)
             pdf.set_font('Nanum', size=13)
             pdf.set_text_color(26, 22, 18)
@@ -243,14 +285,14 @@ def add_article_to_pdf(pdf, title, blocks, source_url, is_first=True):
             pdf.set_draw_color(220, 210, 190)
             pdf.set_line_width(0.3)
             pdf.line(12, pdf.get_y(), 198, pdf.get_y())
-            pdf.ln(4)              # 소제목 아래 여백
+            pdf.ln(4)
 
         elif block['type'] == 'body':
             pdf.set_x(12)
             pdf.set_font('Nanum', size=10)
             pdf.set_text_color(50, 45, 38)
             pdf.multi_cell(186, 7, block['text'])
-            pdf.ln(4)              # ← 문단 사이 여백 (핵심!)
+            pdf.ln(4)
 
         elif block['type'] == 'list':
             pdf.set_x(16)
@@ -265,15 +307,14 @@ def create_pdf(articles):
     pdf.set_margins(0, 0, 0)
     pdf.add_font('Nanum', '', FONT_PATH)
 
+    total = len(articles)
     for i, (title, blocks, url) in enumerate(articles):
-        pdf.add_page()
-        add_article_to_pdf(pdf, title, blocks, url, is_first=(i == 0))
-
+        add_article_to_pdf(pdf, title, blocks, url)
         # 페이지 번호
         pdf.set_y(-12)
         pdf.set_font('Nanum', size=8)
         pdf.set_text_color(180, 170, 155)
-        pdf.cell(0, 10, f'{i+1} / {len(articles)}  ·  pdfgen-prhu.onrender.com', align='C')
+        pdf.cell(0, 10, f'{i+1} / {total}  ·  pdfgen-prhu.onrender.com', align='C')
 
     buf = io.BytesIO()
     pdf.output(buf)
@@ -287,7 +328,7 @@ def index():
 @app.route('/convert', methods=['POST'])
 def convert():
     raw = request.form.get('urls', '').strip()
-    urls = [u.strip() for u in raw.split('\n') if u.strip().startswith('http')]
+    urls = [u.strip() for u in raw.split('\n') if u.strip()]
 
     if not urls:
         return '주소를 입력해 주세요.', 400
@@ -300,7 +341,7 @@ def convert():
             title, blocks = fetch_page(url)
             if blocks:
                 articles.append((title, blocks, url))
-        except Exception as e:
+        except Exception:
             pass
 
     if not articles:
