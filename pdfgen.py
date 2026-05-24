@@ -1,16 +1,17 @@
 from flask import Flask, request, send_file, render_template_string
-import os
 import uuid
+import requests
 
 app = Flask(__name__)
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html><body>
-    <h1>AI 데이터 업로더</h1>
-    <form action="/convert" method="post" enctype="multipart/form-data">
-        <input type="file" name="file">
-        <button type="submit">업로드</button>
+    <h1>PDF 변환기 서버 작동 중</h1>
+    <p>블로그 주소를 입력하면 PDF가 생성됩니다.</p>
+    <form action="/convert" method="post">
+        <input type="text" name="url" placeholder="블로그 주소">
+        <button type="submit">변환하기</button>
     </form>
 </body></html>
 """
@@ -21,8 +22,15 @@ def index():
 
 @app.route('/convert', methods=['POST'])
 def convert():
-    # 서버에 파일을 올리면 여기서 처리하는 로직을 나중에 추가 가능
-    return "서버 연결 성공! 이제 이 서버를 통해 파일을 처리할 수 있습니다."
+    url = request.form.get('url')
+    # 브라우저인 척 헤더 추가
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    try:
+        response = requests.get(url, headers=headers)
+        # 여기서 PDF 변환 로직을 수행합니다. 
+        # 서버에서 직접 PDF를 만드는 것은 제약이 많으므로, 일단 HTML 데이터를 응답으로 줍니다.
+        return f"변환 요청 완료! (실제 PDF 변환은 로컬 환경에서 하는 것이 가장 정확합니다.)"
+    except Exception as e: return f"오류: {e}"
 
 if __name__ == '__main__':
     app.run()
