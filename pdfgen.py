@@ -246,7 +246,7 @@ def create_pdf(title, blocks, source_url, include_images=False):
                         pdf.add_page()
                         pdf.set_xy(12, 15)
                     pdf.ln(3)
-                    pdf.image(img_path, x=12, w=120)
+                    pdf.image(img_path, x=12, w=170)
                     pdf.ln(4)
                 except:
                     pass
